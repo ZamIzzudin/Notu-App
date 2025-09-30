@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+
 import '../models/note.dart';
 import '../utils/app_theme.dart';
+import '../utils/database_helper.dart';
+
 import '../widgets/color_picker.dart';
 
 class AddEditNotePage extends StatefulWidget {
   final Note? note;
 
-  const AddEditNotePage({super.key, this.note});
+  const AddEditNotePage({Key? key, this.note}) : super(key: key);
 
   @override
-  _AddEditNotePageState createState() => _AddEditNotePageState();
+  State<AddEditNotePage> createState() => _AddEditNotePageState();
 }
 
 class _AddEditNotePageState extends State<AddEditNotePage> {
@@ -17,6 +21,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
   final _contentController = TextEditingController();
   int _selectedColor = 0;
   bool _hasChanges = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -44,7 +49,7 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     super.dispose();
   }
 
-  void _saveNote() {
+  Future<void> _saveNote() async {
     if (_titleController.text.isEmpty && _contentController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -59,16 +64,49 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
       return;
     }
 
-    final note = Note(
-      id: widget.note?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      title: _titleController.text.isEmpty ? 'Untitled' : _titleController.text,
-      content: _contentController.text,
-      createdAt: widget.note?.createdAt ?? DateTime.now(),
-      modifiedAt: DateTime.now(),
-      color: _selectedColor,
-    );
+    setState(() {
+      _isLoading = true;
+    });
 
-    Navigator.pop(context, note);
+    try {
+      final id = const Uuid().v4();
+
+      final note = Note(
+        id: widget.note?.id ?? id,
+        title: _titleController.text.isEmpty
+            ? 'Untitled'
+            : _titleController.text,
+        content: _contentController.text,
+        createdAt: widget.note?.createdAt ?? DateTime.now(),
+        updatedAt: DateTime.now(),
+        color: _selectedColor,
+      );
+
+      if (widget.note == null) {
+        await DatabaseHelper.instance.create(note);
+      } else {
+        await DatabaseHelper.instance.update(note);
+      }
+
+      if (mounted) {
+        Navigator.pop(context, note);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving note: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<bool> _onWillPop() async {
@@ -77,23 +115,37 @@ class _AddEditNotePageState extends State<AddEditNotePage> {
     final shouldDiscard = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Discard changes?'),
         content: const Text(
-            'You have unsaved changes. Do you want to discard them?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Discard',
-                style: TextStyle(color: AppTheme.deleteColor)),
-          ),
-        ],
+          'You have unsaved changes. Do you want to discard them?',
+        ),
+        actions: _isLoading
+            ? [
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              ]
+            : [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text(
+                    'Discard',
+                    style: TextStyle(color: AppTheme.deleteColor),
+                  ),
+                ),
+              ],
       ),
     );
 

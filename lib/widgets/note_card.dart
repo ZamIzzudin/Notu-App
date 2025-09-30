@@ -92,7 +92,7 @@ class NoteCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    _formatDate(note.modifiedAt),
+                    _formatDate(note.updatedAt),
                     style: TextStyle(
                       fontSize: 12,
                       color: AppTheme.textSecondary.withOpacity(0.6),

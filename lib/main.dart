@@ -1,15 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'screens/notes_list_page.dart';
+
+import 'utils/database_helper.dart';
+import 'utils/widget_service.dart';
 import 'utils/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await DatabaseHelper.instance.database;
+
+  await WidgetService.initializeWidget();
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
     ),
   );
+
   runApp(const MyApp());
 }
 

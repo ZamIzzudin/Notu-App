@@ -1,39 +1,49 @@
 import 'package:flutter/material.dart';
+
 import '../models/note.dart';
 import '../utils/app_theme.dart';
+import '../utils/database_helper.dart';
+import '../utils/widget_service.dart';
+
 import '../widgets/note_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/delete_dialog.dart';
+import '../widgets/loading_overlay.dart';
+
 import 'add_edit_note_page.dart';
 
 class NotesListPage extends StatefulWidget {
   const NotesListPage({super.key});
 
   @override
-  _NotesListPageState createState() => _NotesListPageState();
+  State<NotesListPage> createState() => _NotesListPageState();
 }
 
 class _NotesListPageState extends State<NotesListPage> {
   List<Note> notes = [];
   String searchQuery = '';
+  bool isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadSampleNotes();
+    WidgetService.initializeWidget();
+    _loadNotes();
   }
 
-  void _loadSampleNotes() {
-    notes = [
-      Note(
-        id: '1',
-        title: 'Belajar Flutter',
-        content: 'Membuat simple notes management app menggunakan flutter',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        modifiedAt: DateTime.now().subtract(const Duration(hours: 2)),
-        color: 1,
-      ),
-    ];
+  Future<void> _loadNotes() async {
+    setState(() {
+      isLoading = true;
+    });
+
+    final loadedNotes = await DatabaseHelper.instance.readAllNotes();
+
+    setState(() {
+      notes = loadedNotes;
+      isLoading = false;
+    });
+
+    await WidgetService.updateWidget(notes);
   }
 
   void _deleteNote(String id) async {
@@ -43,6 +53,9 @@ class _NotesListPageState extends State<NotesListPage> {
     );
 
     if (shouldDelete == true) {
+      await DatabaseHelper.instance.delete(id);
+      _loadNotes();
+
       setState(() {
         notes.removeWhere((note) => note.id == id);
       });
@@ -62,9 +75,7 @@ class _NotesListPageState extends State<NotesListPage> {
   void _navigateToAddEdit(BuildContext context, {Note? note}) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => AddEditNotePage(note: note),
-      ),
+      MaterialPageRoute(builder: (context) => AddEditNotePage(note: note)),
     );
 
     if (result != null && result is Note) {
@@ -77,7 +88,7 @@ class _NotesListPageState extends State<NotesListPage> {
         } else {
           notes.insert(0, result);
         }
-        notes.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+        notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       });
     }
   }
@@ -94,64 +105,71 @@ class _NotesListPageState extends State<NotesListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverAppBar(
-              floating: true,
-              backgroundColor: AppTheme.backgroundColor,
-              title: const Text('My Notes'),
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(80),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                  child: SearchBar(
-                    onChanged: (value) => setState(() => searchQuery = value),
+      body: LoadingOverlay(
+        isLoading: isLoading,
+        message: 'Memuat catatan...',
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                floating: true,
+                backgroundColor: AppTheme.backgroundColor,
+                title: const Text('Notu'),
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(80),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: SearchBar(
+                      onChanged: (value) => setState(() => searchQuery = value),
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (filteredNotes.isEmpty)
-              SliverFillRemaining(
-                child: EmptyState(
-                  searchMode: searchQuery.isNotEmpty,
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverToBoxAdapter(
-                  // Tambahkan SliverToBoxAdapter
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final crossAxisCount = constraints.maxWidth > 600 ? 2 : 1;
-                      return GridView.builder(
-                        // Gunakan GridView.builder biasa
-                        shrinkWrap: true, // Penting untuk mencegah overflow
-                        physics:
-                            const NeverScrollableScrollPhysics(), // Disable scroll karena sudah di dalam CustomScrollView
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          childAspectRatio:
-                              constraints.maxWidth > 600 ? 1.5 : 2.5,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                        ),
-                        itemCount: filteredNotes.length,
-                        itemBuilder: (context, index) => NoteCard(
-                          note: filteredNotes[index],
-                          onTap: () => _navigateToAddEdit(
-                            context,
+              if (filteredNotes.isEmpty)
+                SliverFillRemaining(
+                  child: EmptyState(searchMode: searchQuery.isNotEmpty),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverToBoxAdapter(
+                    // Tambahkan SliverToBoxAdapter
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final crossAxisCount = constraints.maxWidth > 600
+                            ? 2
+                            : 1;
+                        return GridView.builder(
+                          // Gunakan GridView.builder biasa
+                          shrinkWrap: true, // Penting untuk mencegah overflow
+                          physics:
+                              const NeverScrollableScrollPhysics(), // Disable scroll karena sudah di dalam CustomScrollView
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                childAspectRatio: constraints.maxWidth > 600
+                                    ? 1.5
+                                    : 2.5,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemCount: filteredNotes.length,
+                          itemBuilder: (context, index) => NoteCard(
                             note: filteredNotes[index],
+                            onTap: () => _navigateToAddEdit(
+                              context,
+                              note: filteredNotes[index],
+                            ),
+                            onDelete: () =>
+                                _deleteNote(filteredNotes[index].id),
                           ),
-                          onDelete: () => _deleteNote(filteredNotes[index].id),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

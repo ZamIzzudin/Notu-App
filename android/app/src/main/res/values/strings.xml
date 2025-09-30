@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Notu</string>
+    <string name="widget_description">Quick access to your latest note</string>
+</resources>
