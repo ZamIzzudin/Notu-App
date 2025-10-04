@@ -1,116 +1,89 @@
 package com.example.notu
 
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.content.SharedPreferences
+import android.content.Intent
 import android.widget.RemoteViews
-import es.antonborri.home_widget.HomeWidgetPlugin
-import es.antonborri.home_widget.HomeWidgetProvider
-import es.antonborri.home_widget.HomeWidgetLaunchIntent
-import java.io.File
+import android.graphics.Color
+import android.view.View
 
-class NotesWidgetProvider : HomeWidgetProvider() {
+class NotesWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
-        appWidgetIds: IntArray,
-        widgetData: SharedPreferences
+        appWidgetIds: IntArray
     ) {
-        appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.notes_widget_layout)
-            
-            // Get widget data
-            val hasPinnedNote = widgetData.getBoolean("has_pinned_note", false)
-            val title = widgetData.getString("widget_title", "No Pinned Note") ?: "No Pinned Note"
-            val content = widgetData.getString("widget_content", "Pin a note to display it here") ?: ""
-            val colorHex = widgetData.getString("widget_color", "#FFFFFF") ?: "#FFFFFF"
-            val imagePath = widgetData.getString("widget_image", "") ?: ""
-
-            // Set title
-            views.setTextViewText(R.id.widget_title, title)
-            
-            // Set content
-            views.setTextViewText(R.id.widget_content, content)
-
-            // Set background color
-            try {
-                val color = android.graphics.Color.parseColor(colorHex)
-                views.setInt(R.id.widget_background, "setBackgroundColor", color)
-            } catch (e: Exception) {
-                // Use default white if color parsing fails
-                views.setInt(
-                    R.id.widget_background, 
-                    "setBackgroundColor", 
-                    android.graphics.Color.WHITE
-                )
-            }
-
-            // Set image if available
-            if (imagePath.isNotEmpty()) {
-                try {
-                    val imageFile = File(imagePath)
-                    if (imageFile.exists()) {
-                        val bitmap = BitmapFactory.decodeFile(imagePath)
-                        if (bitmap != null) {
-                            // Scale bitmap if too large
-                            val scaledBitmap = scaleBitmap(bitmap, 400, 300)
-                            views.setImageViewBitmap(R.id.widget_image, scaledBitmap)
-                            views.setViewVisibility(R.id.widget_image, android.view.View.VISIBLE)
-                            
-                            // Recycle original if scaled
-                            if (scaledBitmap !== bitmap) {
-                                bitmap.recycle()
-                            }
-                        } else {
-                            views.setViewVisibility(R.id.widget_image, android.view.View.GONE)
-                        }
-                    } else {
-                        views.setViewVisibility(R.id.widget_image, android.view.View.GONE)
-                    }
-                } catch (e: Exception) {
-                    views.setViewVisibility(R.id.widget_image, android.view.View.GONE)
-                }
-            } else {
-                views.setViewVisibility(R.id.widget_image, android.view.View.GONE)
-            }
-
-            // Show pin indicator if note is pinned
-            if (hasPinnedNote) {
-                views.setViewVisibility(R.id.widget_pin_indicator, android.view.View.VISIBLE)
-            } else {
-                views.setViewVisibility(R.id.widget_pin_indicator, android.view.View.GONE)
-            }
-
-            // Set click intent to open app
-            val pendingIntent = HomeWidgetLaunchIntent.getActivity(
-                context,
-                MainActivity::class.java
-            )
-            views.setOnClickPendingIntent(R.id.widget_background, pendingIntent)
-
-            // Update widget
-            appWidgetManager.updateAppWidget(widgetId, views)
+        for (appWidgetId in appWidgetIds) {
+            updateAppWidget(context, appWidgetManager, appWidgetId)
         }
     }
 
-    private fun scaleBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        
-        if (width <= maxWidth && height <= maxHeight) {
-            return bitmap
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        if (intent.action == ACTION_UPDATE_WIDGET) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val appWidgetIds = appWidgetManager.getAppWidgetIds(
+                android.content.ComponentName(context, NotesWidgetProvider::class.java)
+            )
+            for (appWidgetId in appWidgetIds) {
+                updateAppWidget(context, appWidgetManager, appWidgetId)
+            }
+        }
+    }
+
+    companion object {
+        const val ACTION_UPDATE_WIDGET = "com.example.notu.UPDATE_WIDGET"
+        private const val PREFS_NAME = "NotesWidgetPrefs"
+        private const val PREF_HAS_PINNED = "hasPinnedNotes"
+        private const val PREF_TITLE = "title"
+        private const val PREF_CONTENT = "content"
+        // private const val PREF_COLOR = "color"
+
+        fun updateAppWidget(
+            context: Context,
+            appWidgetManager: AppWidgetManager,
+            appWidgetId: Int
+        ) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val hasPinnedNotes = prefs.getBoolean(PREF_HAS_PINNED, false)
+            
+            val views = RemoteViews(context.packageName, R.layout.notes_widget_layout)
+
+            if (hasPinnedNotes) {
+                val title = prefs.getString(PREF_TITLE, "No Title") ?: "No Title"
+                val content = prefs.getString(PREF_CONTENT, "No Content") ?: "No Content"
+                // val colorInt = prefs.getInt(PREF_COLOR, Color.WHITE)
+
+                views.setViewVisibility(R.id.empty_state, View.GONE)
+                views.setViewVisibility(R.id.note_container, View.VISIBLE)
+                
+                views.setTextViewText(R.id.widget_title, title)
+                views.setTextViewText(R.id.widget_content, content)
+                // views.setInt(R.id.widget_background, "setBackgroundColor", colorInt)
+            } else {
+                views.setViewVisibility(R.id.empty_state, View.VISIBLE)
+                views.setViewVisibility(R.id.note_container, View.GONE)
+            }
+
+            appWidgetManager.updateAppWidget(appWidgetId, views)
         }
 
-        val ratio = Math.min(
-            maxWidth.toFloat() / width.toFloat(),
-            maxHeight.toFloat() / height.toFloat()
-        )
-
-        val newWidth = (width * ratio).toInt()
-        val newHeight = (height * ratio).toInt()
-
-        return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        fun saveWidgetData(
+            context: Context,
+            hasPinnedNotes: Boolean,
+            title: String,
+            content: String,
+            // color: Int
+        ) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putBoolean(PREF_HAS_PINNED, hasPinnedNotes)
+                putString(PREF_TITLE, title)
+                putString(PREF_CONTENT, content)
+                // putInt(PREF_COLOR, color)
+                apply()
+            }
+        }
     }
 }
