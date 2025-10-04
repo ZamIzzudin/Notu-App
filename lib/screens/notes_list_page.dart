@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/note.dart';
@@ -43,25 +45,19 @@ class _NotesListPageState extends State<NotesListPage> {
       isLoading = false;
     });
 
-    await WidgetService.updateWidget(notes);
+    await WidgetService.updateWidget();
   }
 
-  void _deleteNote(String id) async {
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => const DeleteConfirmationDialog(),
-    );
+  Future<void> _togglePinNote(Note note) async {
+    try {
+      await DatabaseHelper.instance.togglePinNote(note.id);
+      await WidgetService.updateWidget();
+      await _loadNotes();
 
-    if (shouldDelete == true) {
-      await DatabaseHelper.instance.delete(id);
-      _loadNotes();
-
-      setState(() {
-        notes.removeWhere((note) => note.id == id);
-      });
+      final isPinned = note.isPinned ? 'Note unpinned' : 'Note pinned';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Note deleted'),
+          content: Text(isPinned),
           backgroundColor: AppTheme.primaryColor,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -69,6 +65,70 @@ class _NotesListPageState extends State<NotesListPage> {
           ),
         ),
       );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving note: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _deleteNote(Note note) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => const DeleteConfirmationDialog(),
+    );
+
+    if (shouldDelete == true) {
+      try {
+        await DatabaseHelper.instance.delete(note.id);
+
+        // Delete image if exists
+        if (note.imagePath != null && note.imagePath!.isNotEmpty) {
+          try {
+            await File(note.imagePath!).delete();
+          } catch (e) {
+            print('Error deleting image: $e');
+          }
+        }
+
+        // Update widget if deleted note was pinned
+        if (note.isPinned) {
+          await WidgetService.updateWidget();
+        }
+        _loadNotes();
+
+        setState(() {
+          notes.removeWhere((each) => each.id == note.id);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Note deleted'),
+            backgroundColor: AppTheme.primaryColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting note: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -132,40 +192,19 @@ class _NotesListPageState extends State<NotesListPage> {
               else
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
-                  sliver: SliverToBoxAdapter(
-                    // Tambahkan SliverToBoxAdapter
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final crossAxisCount = constraints.maxWidth > 600
-                            ? 2
-                            : 1;
-                        return GridView.builder(
-                          // Gunakan GridView.builder biasa
-                          shrinkWrap: true, // Penting untuk mencegah overflow
-                          physics:
-                              const NeverScrollableScrollPhysics(), // Disable scroll karena sudah di dalam CustomScrollView
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                childAspectRatio: constraints.maxWidth > 600
-                                    ? 1.5
-                                    : 2.5,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                          itemCount: filteredNotes.length,
-                          itemBuilder: (context, index) => NoteCard(
-                            note: filteredNotes[index],
-                            onTap: () => _navigateToAddEdit(
-                              context,
-                              note: filteredNotes[index],
-                            ),
-                            onDelete: () =>
-                                _deleteNote(filteredNotes[index].id),
-                          ),
-                        );
-                      },
-                    ),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final note = filteredNotes[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: NoteCard(
+                          note: note,
+                          onTap: () => _navigateToAddEdit(context, note: note),
+                          onDelete: () => _deleteNote(note),
+                          onTogglePin: () => _togglePinNote(note),
+                        ),
+                      );
+                    }, childCount: filteredNotes.length),
                   ),
                 ),
             ],

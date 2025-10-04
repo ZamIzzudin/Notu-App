@@ -24,13 +24,17 @@ class DatabaseHelper {
   Future _createDB(Database db, int version) async {
     const idType = 'TEXT PRIMARY KEY';
     const textType = 'TEXT NOT NULL';
+    const imageType = 'TEXT';
     const integerType = 'INTEGER NOT NULL';
+    const boolType = 'INTEGER NOT NULL DEFAULT 0';
 
     await db.execute('''
       CREATE TABLE notes (
         id $idType,
         title $textType,
         content $textType,
+        isPinned $boolType,
+        imagePath $imageType,
         color $integerType,
         createdAt $textType,
         updatedAt $textType
@@ -60,10 +64,27 @@ class DatabaseHelper {
   // Read - Get all notes
   Future<List<Note>> readAllNotes() async {
     final db = await instance.database;
-    const orderBy = 'updatedAt DESC';
-    final result = await db.query('notes', orderBy: orderBy);
-
+    final result = await db.query(
+      'notes',
+      orderBy: 'isPinned DESC, updatedAt DESC',
+    );
     return result.map((json) => Note.fromJson(json)).toList();
+  }
+
+  // Get pinned note
+  Future<Note?> getPinnedNote() async {
+    final db = await database;
+    final result = await db.query(
+      'notes',
+      where: 'isPinned = ?',
+      whereArgs: [1],
+      limit: 1,
+    );
+
+    if (result.isNotEmpty) {
+      return Note.fromJson(result.first);
+    }
+    return null;
   }
 
   // Update - Update note
@@ -74,6 +95,45 @@ class DatabaseHelper {
       note.toJson(),
       where: 'id = ?',
       whereArgs: [note.id],
+    );
+  }
+
+  // Pin/Unpin note - Fixed version
+  Future<void> togglePinNote(String noteId) async {
+    final db = await database;
+
+    // Get current note
+    final currentNote = await readNote(noteId);
+    if (currentNote == null) return;
+
+    if (currentNote.isPinned) {
+      // If already pinned, unpin it
+      await db.update(
+        'notes',
+        {'isPinned': 0},
+        where: 'id = ?',
+        whereArgs: [noteId],
+      );
+    } else {
+      // If not pinned, unpin all others first, then pin this one
+      await db.update('notes', {'isPinned': 0});
+      await db.update(
+        'notes',
+        {'isPinned': 1},
+        where: 'id = ?',
+        whereArgs: [noteId],
+      );
+    }
+  }
+
+  // Unpin note
+  Future<void> unpinNote(String noteId) async {
+    final db = await database;
+    await db.update(
+      'notes',
+      {'isPinned': 0},
+      where: 'id = ?',
+      whereArgs: [noteId],
     );
   }
 
@@ -93,5 +153,19 @@ class DatabaseHelper {
   Future close() async {
     final db = await instance.database;
     db.close();
+  }
+
+  // Force reset database (untuk development/testing)
+  Future<void> resetDatabase() async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, 'notes.db');
+
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+
+    await deleteDatabase(path);
+    _database = await _initDB('notes.db');
   }
 }
